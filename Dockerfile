@@ -5,14 +5,14 @@
 
 FROM node:20-alpine AS builder
 
-# Install build tools for native deps (bcryptjs etc)
+# Build tools for native deps (bcryptjs)
 RUN apk add --no-cache python3 make g++
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
 WORKDIR /app
 
-# Copy workspace config
+# Copy workspace config (tsconfig.base.json is critical — all packages extend it)
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.base.json ./
 
 # Copy only the packages we need (NOT admin)
@@ -22,21 +22,31 @@ COPY packages/shared/package.json packages/shared/
 COPY apps/bot/package.json apps/bot/
 COPY apps/mini-app/package.json apps/mini-app/
 
-# Install deps (--no-frozen-lockfile because admin is excluded)
+# Install deps
 RUN pnpm install --no-frozen-lockfile
 
-# Copy source code
+# Copy ALL source code for the packages we need
 COPY packages/ packages/
 COPY apps/bot/ apps/bot/
 COPY apps/mini-app/ apps/mini-app/
 
-# Generate Prisma client
+# ─── Build in dependency order ─────────────────────
+# 1. Generate Prisma client (database needs this before tsc)
 RUN cd packages/database && npx prisma generate
 
-# Build everything in order
-RUN pnpm --filter @shen-zhen/shared build 2>/dev/null || true
-RUN pnpm --filter @shen-zhen/core build 2>/dev/null || true
+# 2. Build shared (no deps on other workspace packages)
+RUN pnpm --filter @shen-zhen/shared build
+
+# 3. Build database (depends on prisma client, no workspace deps)
+RUN pnpm --filter @shen-zhen/database build
+
+# 4. Build core (depends on shared + database)
+RUN pnpm --filter @shen-zhen/core build
+
+# 5. Build mini-app (Vite, outputs static files)
 RUN pnpm --filter @shen-zhen/mini-app build
+
+# 6. Build bot (depends on everything)
 RUN pnpm --filter @shen-zhen/bot build
 
 # ─── Production Stage ───────────────────────────────
@@ -44,7 +54,7 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Copy the entire built workspace (simpler & reliable)
+# Copy the entire built workspace
 COPY --from=builder /app /app
 
 ENV NODE_ENV=production
