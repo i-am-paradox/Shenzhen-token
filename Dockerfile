@@ -3,7 +3,7 @@
 # Builds bot + mini-app only (admin is separate).
 # ──────────────────────────────────────────────────
 
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 # Build tools for native deps (bcryptjs)
 RUN apk add --no-cache python3 make g++
@@ -50,7 +50,7 @@ RUN pnpm --filter @shen-zhen/mini-app build
 RUN pnpm --filter @shen-zhen/bot build
 
 # ─── Production Stage ───────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 
@@ -64,4 +64,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD wget -q --spider http://localhost:3000/health || exit 1
 
-CMD ["sh", "-c", "npx prisma db push --schema=packages/database/prisma/schema.prisma && node apps/bot/dist/index.js"]
+CMD ["sh", "-c", "./node_modules/.bin/prisma db push --schema=packages/database/prisma/schema.prisma && node apps/bot/dist/index.js"]
