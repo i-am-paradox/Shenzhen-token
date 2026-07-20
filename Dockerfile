@@ -11,26 +11,16 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 
 WORKDIR /app
 
-# Copy package files first for layer caching
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json ./
-COPY packages/core/package.json packages/core/
-COPY packages/database/package.json packages/database/
-COPY packages/shared/package.json packages/shared/
-COPY apps/bot/package.json apps/bot/
-COPY apps/mini-app/package.json apps/mini-app/
+# Copy repository content
+COPY . .
 
 # Install all dependencies
-RUN pnpm install --frozen-lockfile
-
-# Copy source code
-COPY packages/ packages/
-COPY apps/bot/ apps/bot/
-COPY apps/mini-app/ apps/mini-app/
+RUN pnpm install --no-frozen-lockfile
 
 # Generate Prisma client
 RUN cd packages/database && npx prisma generate
 
-# Build shared packages first, then apps
+# Build packages & apps
 RUN pnpm --filter @shen-zhen/shared build 2>/dev/null || true
 RUN pnpm --filter @shen-zhen/core build 2>/dev/null || true
 RUN pnpm --filter @shen-zhen/mini-app build
@@ -43,34 +33,9 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 
 WORKDIR /app
 
-# Copy package manifests + lockfile
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json ./
-COPY packages/core/package.json packages/core/
-COPY packages/database/package.json packages/database/
-COPY packages/shared/package.json packages/shared/
-COPY apps/bot/package.json apps/bot/
+# Copy built workspace
+COPY --from=builder /app ./
 
-# Install production-only dependencies
-RUN pnpm install --frozen-lockfile --prod
-
-# Copy Prisma schema + generated client
-COPY packages/database/prisma/ packages/database/prisma/
-COPY --from=builder /app/node_modules/.pnpm/@prisma+client*/node_modules/@prisma/client/ node_modules/@prisma/client/
-
-# Copy built code
-COPY --from=builder /app/packages/core/dist/ packages/core/dist/
-COPY --from=builder /app/packages/core/package.json packages/core/package.json
-COPY --from=builder /app/packages/shared/dist/ packages/shared/dist/
-COPY --from=builder /app/packages/shared/package.json packages/shared/package.json
-COPY --from=builder /app/packages/database/dist/ packages/database/dist/
-COPY --from=builder /app/packages/database/package.json packages/database/package.json
-COPY --from=builder /app/apps/bot/dist/ apps/bot/dist/
-COPY --from=builder /app/apps/bot/package.json apps/bot/package.json
-
-# Copy mini-app static build
-COPY --from=builder /app/apps/mini-app/dist/ apps/mini-app/dist/
-
-# Environment
 ENV NODE_ENV=production
 ENV PORT=3000
 EXPOSE 3000
