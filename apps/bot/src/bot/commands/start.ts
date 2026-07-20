@@ -128,26 +128,23 @@ export async function sendWelcome(
   if (isNewUser) {
     // ─── New User Onboarding ─────────────────────────
     const keyboard = new InlineKeyboard()
-      .webApp("🎮 Open Mini App", MINI_APP)
+      .webApp("🚀 Launch App & Tap to Earn 💎", MINI_APP)
       .row()
-      .text("💰 Check Balance", "cmd_balance")
-      .text("👥 Invite Friends", "cmd_invite")
+      .text("📊 My Balance", "cmd_balance")
+      .text("🎯 Earn Tasks", "cmd_tasks")
       .row()
-      .text("📋 View Tasks", "cmd_tasks")
+      .text("🤝 Invite Friends", "cmd_invite")
       .text("🏆 Leaderboard", "cmd_leaderboard");
 
     await ctx.reply(
-      `🎉 <b>Welcome to Shén Zhèn Airdrop!</b>\n\n` +
-        `You've earned <b>+100 points</b> as a welcome bonus! 🎁\n\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `📖 <b>How to Earn Points:</b>\n\n` +
-        `1️⃣ <b>Tap to Earn</b> — Open the Mini App and tap the coin. Each tap = points!\n\n` +
-        `2️⃣ <b>Daily Check-in</b> — Come back every day for streak bonuses (up to 500/day)!\n\n` +
-        `3️⃣ <b>Complete Tasks</b> — Join channels, follow socials, answer quizzes.\n\n` +
-        `4️⃣ <b>Invite Friends</b> — Share your link and earn 500 per friend!\n\n` +
-        `5️⃣ <b>Spin the Wheel</b> — Free spin every 8 hours for bonus points!\n\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `💡 <b>Pro tip:</b> Upgrade your tap power in the Mini App to earn faster!`,
+      `🔥 <b>WELCOME TO SHÉN ZHÈN AIRDROP</b> 🔥\n\n` +
+        `Congratulations! You've received a <b>+100 $SHEN Bonus</b> to kickstart your journey! 🎁\n\n` +
+        `⚡ <b>Quick Start Guide:</b>\n` +
+        `• 👆 <b>Tap to Mine:</b> Earn $SHEN tokens instantly in the Mini App.\n` +
+        `• 🎁 <b>Daily Rewards:</b> Log in every 24h for streak multipliers.\n` +
+        `• 👥 <b>Refer & Earn:</b> Get 500 points for every active friend invited!\n` +
+        `• 🎯 <b>Tasks & Quizzes:</b> Complete simple social tasks for big boosts.\n\n` +
+        `👇 <i>Tap the button below to launch your mining hub!</i>`,
       {
         parse_mode: "HTML",
         reply_markup: keyboard,
@@ -156,18 +153,20 @@ export async function sendWelcome(
   } else {
     // ─── Returning User ──────────────────────────────
     const keyboard = new InlineKeyboard()
-      .webApp("🎮 Open Mini App", MINI_APP)
+      .webApp("🚀 Open Mini App ⚡", MINI_APP)
       .row()
-      .text("💰 Balance", "cmd_balance")
-      .text("📋 Tasks", "cmd_tasks")
+      .text("📊 Balance", "cmd_balance")
+      .text("🎯 Tasks", "cmd_tasks")
       .row()
-      .text("👥 Invite", "cmd_invite")
+      .text("🤝 Referral Link", "cmd_invite")
       .text("🏆 Leaderboard", "cmd_leaderboard");
 
     await ctx.reply(
-      `👋 <b>Welcome back to Shén Zhèn Airdrop!</b>\n\n` +
-        `Ready to earn more points? Open the Mini App and start tapping! 🚀\n\n` +
-        `Don't forget your daily check-in for streak bonuses! 📅`,
+      `⚡ <b>SHÉN ZHÈN AIRDROP HUB</b> ⚡\n\n` +
+        `Welcome back, Boss! Your mining rig is waiting for you. 🦾\n\n` +
+        `💡 <b>Daily Reminder:</b>\n` +
+        `Don't let your energy go to waste. Keep tapping & claim your daily bonus before it resets!\n\n` +
+        `👇 <i>Tap below to enter the Mini App!</i>`,
       {
         parse_mode: "HTML",
         reply_markup: keyboard,
