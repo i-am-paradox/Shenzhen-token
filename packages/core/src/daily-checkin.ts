@@ -5,10 +5,12 @@
  * Day 1: 50 pts, Day 2: 75, Day 3: 100, Day 4: 150,
  * Day 5: 200, Day 6: 300, Day 7+: 500
  * Miss a day → streak resets.
+ *
+ * SECURITY: Uses prisma.$transaction to prevent double-claim
+ * from concurrent requests.
  */
 
 import { prisma } from "@shen-zhen/database";
-import { awardPoints } from "./points.js";
 
 /** Points awarded per streak day */
 const STREAK_REWARDS: Record<number, number> = {
@@ -50,58 +52,103 @@ export interface CheckinResult {
 
 /**
  * Perform daily check-in for a user.
- * Returns the check-in result including streak info.
+ *
+ * SECURITY FIX: Entire flow runs inside prisma.$transaction.
+ * The unique constraint on [userId, day] is the final guard,
+ * but the transaction prevents the "check-then-create" race
+ * where two concurrent requests both see "not checked in"
+ * and both try to create.
  */
 export async function dailyCheckin(userId: number): Promise<CheckinResult> {
   const today = todayUTC();
 
-  // Check if already checked in today
-  const existing = await prisma.dailyCheckin.findUnique({
-    where: { userId_day: { userId, day: today } },
-  });
+  try {
+    return await prisma.$transaction(async (tx) => {
+      // Check if already checked in today (within transaction)
+      const existing = await tx.dailyCheckin.findUnique({
+        where: { userId_day: { userId, day: today } },
+      });
 
-  if (existing) {
-    return {
-      success: false,
-      alreadyCheckedIn: true,
-      streak: existing.streak,
-      pointsAwarded: 0,
-      nextReward: getStreakReward(existing.streak + 1),
-    };
+      if (existing) {
+        return {
+          success: false,
+          alreadyCheckedIn: true,
+          streak: existing.streak,
+          pointsAwarded: 0,
+          nextReward: getStreakReward(existing.streak + 1),
+        };
+      }
+
+      // Check yesterday's check-in for streak continuity
+      const yesterday = yesterdayUTC();
+      const yesterdayCheckin = await tx.dailyCheckin.findUnique({
+        where: { userId_day: { userId, day: yesterday } },
+      });
+
+      const streak = yesterdayCheckin ? yesterdayCheckin.streak + 1 : 1;
+      const points = getStreakReward(streak);
+
+      // Create check-in record
+      await tx.dailyCheckin.create({
+        data: {
+          userId,
+          day: today,
+          streak,
+          pointsAwarded: points,
+        },
+      });
+
+      // Award points via ledger (within transaction)
+      const sourceId = `checkin_${userId}_${today.toISOString().slice(0, 10)}`;
+      await tx.pointLedger.create({
+        data: {
+          userId,
+          amount: points,
+          reason: "daily_checkin",
+          sourceType: "mini_app",
+          sourceId,
+          metadata: { streak },
+        },
+      });
+
+      // Update cached balance
+      await tx.user.update({
+        where: { id: userId },
+        data: { cachedBalance: { increment: points } },
+      });
+
+      return {
+        success: true,
+        streak,
+        pointsAwarded: points,
+        nextReward: getStreakReward(streak + 1),
+      };
+    });
+  } catch (error: unknown) {
+    // Unique constraint violation = concurrent double-claim attempt
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code: string }).code === "P2002"
+    ) {
+      const existing = await prisma.dailyCheckin.findUnique({
+        where: { userId_day: { userId, day: today } },
+      });
+      return {
+        success: false,
+        alreadyCheckedIn: true,
+        streak: existing?.streak ?? 0,
+        pointsAwarded: 0,
+        nextReward: getStreakReward((existing?.streak ?? 0) + 1),
+      };
+    }
+    throw error;
   }
-
-  // Check yesterday's check-in for streak
-  const yesterday = yesterdayUTC();
-  const yesterdayCheckin = await prisma.dailyCheckin.findUnique({
-    where: { userId_day: { userId, day: yesterday } },
-  });
-
-  const streak = yesterdayCheckin ? yesterdayCheckin.streak + 1 : 1;
-  const points = getStreakReward(streak);
-
-  // Create check-in record
-  await prisma.dailyCheckin.create({
-    data: {
-      userId,
-      day: today,
-      streak,
-      pointsAwarded: points,
-    },
-  });
-
-  // Award points through the ledger
-  await awardPoints(userId, points, "daily_checkin", "bot", `checkin_${userId}_${today.toISOString().slice(0, 10)}`, { streak });
-
-  return {
-    success: true,
-    streak,
-    pointsAwarded: points,
-    nextReward: getStreakReward(streak + 1),
-  };
 }
 
 /**
  * Get check-in status for a user (streak, today's status, history).
+ * Read-only — no transaction needed.
  */
 export async function getCheckinStatus(userId: number): Promise<{
   currentStreak: number;
@@ -111,7 +158,6 @@ export async function getCheckinStatus(userId: number): Promise<{
 }> {
   const today = todayUTC();
 
-  // Get last 30 check-ins
   const history = await prisma.dailyCheckin.findMany({
     where: { userId },
     orderBy: { day: "desc" },
@@ -125,12 +171,10 @@ export async function getCheckinStatus(userId: number): Promise<{
 
   const checkedInToday = !!todayEntry;
 
-  // Calculate current streak
   let currentStreak = 0;
   if (checkedInToday) {
     currentStreak = todayEntry.streak;
   } else {
-    // Check if yesterday was checked in (streak still alive)
     const yesterday = yesterdayUTC();
     const yesterdayEntry = history.find(
       (h) => h.day.toISOString().slice(0, 10) === yesterday.toISOString().slice(0, 10),

@@ -3,11 +3,13 @@
  *
  * 8-slice wheel with weighted probabilities.
  * 1 free spin every 8 hours, or pay 50 points for extra spin.
- * Prizes: 10, 25, 50, 100, 250, 500, 1000, 5000 (JACKPOT)
+ *
+ * SECURITY: All mutations wrapped in prisma.$transaction to prevent:
+ * - Double free spins from concurrent requests
+ * - Paid spin double-spend (balance check + deduct are now atomic)
  */
 
 import { prisma } from "@shen-zhen/database";
-import { awardPoints, getBalance, spendPoints } from "./points.js";
 
 /** Wheel slices — index matters for the animation */
 export const WHEEL_SLICES = [
@@ -56,6 +58,7 @@ export interface SpinStatus {
 
 /**
  * Get spin status — can they spin? When's next free spin?
+ * Read-only — no transaction needed.
  */
 export async function getSpinStatus(userId: number): Promise<SpinStatus> {
   const lastFreeSpin = await prisma.spinHistory.findFirst({
@@ -75,7 +78,6 @@ export async function getSpinStatus(userId: number): Promise<SpinStatus> {
     }
   }
 
-  // Get stats
   const [totalSpins, totalWon, recentSpins] = await Promise.all([
     prisma.spinHistory.count({ where: { userId } }),
     prisma.spinHistory.aggregate({
@@ -101,70 +103,118 @@ export async function getSpinStatus(userId: number): Promise<SpinStatus> {
 
 /**
  * Execute a spin — free or paid.
+ *
+ * SECURITY FIX: Entire operation is wrapped in a transaction.
+ * - Free spin: cooldown check + spin creation are atomic
+ * - Paid spin: balance check + deduct + spin are atomic
+ * This prevents double free spins and paid spin double-spend.
  */
 export async function executeSpin(
   userId: number,
   type: "free" | "paid" = "free",
 ): Promise<SpinResult> {
-  // Check cooldown for free spins
-  if (type === "free") {
-    const lastFreeSpin = await prisma.spinHistory.findFirst({
-      where: { userId, spinType: "free" },
-      orderBy: { createdAt: "desc" },
-    });
+  try {
+    return await prisma.$transaction(async (tx) => {
+      // ── Free spin: atomic cooldown check ──
+      if (type === "free") {
+        const lastFreeSpin = await tx.spinHistory.findFirst({
+          where: { userId, spinType: "free" },
+          orderBy: { createdAt: "desc" },
+        });
 
-    if (lastFreeSpin) {
-      const cooldownEnd = new Date(lastFreeSpin.createdAt.getTime() + FREE_SPIN_COOLDOWN_MS);
-      if (new Date() < cooldownEnd) {
-        return {
-          success: false,
-          error: "Free spin not available yet",
-          nextFreeSpinAt: cooldownEnd,
-        };
+        if (lastFreeSpin) {
+          const cooldownEnd = new Date(lastFreeSpin.createdAt.getTime() + FREE_SPIN_COOLDOWN_MS);
+          if (new Date() < cooldownEnd) {
+            return {
+              success: false,
+              error: "Free spin not available yet",
+              nextFreeSpinAt: cooldownEnd,
+            };
+          }
+        }
       }
-    }
-  }
 
-  // For paid spins, check and deduct balance
-  if (type === "paid") {
-    const balance = await getBalance(userId);
-    if (balance < PAID_SPIN_COST) {
+      // ── Paid spin: atomic balance check + deduct ──
+      if (type === "paid") {
+        const result = await tx.pointLedger.aggregate({
+          where: { userId },
+          _sum: { amount: true },
+        });
+        const balance = result._sum.amount ?? 0;
+
+        if (balance < PAID_SPIN_COST) {
+          return {
+            success: false,
+            error: `Need ${PAID_SPIN_COST} points for a paid spin (you have ${balance})`,
+          };
+        }
+
+        // Deduct cost within the same transaction
+        await tx.pointLedger.create({
+          data: {
+            userId,
+            amount: -PAID_SPIN_COST,
+            reason: "spin_purchase",
+            sourceType: "mini_app",
+            sourceId: `paid_spin_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          },
+        });
+
+        // Update cached balance
+        await tx.user.update({
+          where: { id: userId },
+          data: { cachedBalance: { decrement: PAID_SPIN_COST } },
+        });
+      }
+
+      // ── Pick the prize ──
+      const prizeIndex = pickSlice();
+      const prize = WHEEL_SLICES[prizeIndex]!;
+
+      // ── Record spin + award prize atomically ──
+      await tx.spinHistory.create({
+        data: {
+          userId,
+          prizeIndex,
+          pointsWon: prize.points,
+          spinType: type,
+        },
+      });
+
+      await tx.pointLedger.create({
+        data: {
+          userId,
+          amount: prize.points,
+          reason: "spin_reward",
+          sourceType: "mini_app",
+          sourceId: `spin_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          metadata: { prizeIndex, label: prize.label, spinType: type },
+        },
+      });
+
+      // Update cached balance with prize
+      await tx.user.update({
+        where: { id: userId },
+        data: { cachedBalance: { increment: prize.points } },
+      });
+
+      const nextFreeSpinAt = type === "free"
+        ? new Date(Date.now() + FREE_SPIN_COOLDOWN_MS)
+        : undefined;
+
       return {
-        success: false,
-        error: `Need ${PAID_SPIN_COST} points for a paid spin (you have ${balance})`,
+        success: true,
+        prizeIndex,
+        pointsWon: prize.points,
+        label: prize.label,
+        nextFreeSpinAt: nextFreeSpinAt ?? undefined,
       };
-    }
-
-    await spendPoints(userId, PAID_SPIN_COST, "spin_purchase", "bot", `paid_spin_${Date.now()}`);
+    });
+  } catch (error) {
+    console.error("[executeSpin] Transaction failed:", error);
+    return {
+      success: false,
+      error: "Server error — try again",
+    };
   }
-
-  // Pick the prize
-  const prizeIndex = pickSlice();
-  const prize = WHEEL_SLICES[prizeIndex]!;
-
-  // Record the spin
-  await prisma.spinHistory.create({
-    data: {
-      userId,
-      prizeIndex,
-      pointsWon: prize.points,
-      spinType: type,
-    },
-  });
-
-  // Award the prize
-  await awardPoints(userId, prize.points, "spin_reward", "bot", `spin_${Date.now()}`, { prizeIndex, label: prize.label, spinType: type });
-
-  // Calculate next free spin time
-  const nextFreeSpinAt = type === "free"
-    ? new Date(Date.now() + FREE_SPIN_COOLDOWN_MS)
-    : undefined;
-
-  return {
-    success: true,
-    prizeIndex,
-    pointsWon: prize.points,
-    label: prize.label,
-    nextFreeSpinAt: nextFreeSpinAt ?? undefined,
-  };
 }

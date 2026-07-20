@@ -7,7 +7,7 @@
  * Architecture:
  * - Append-only ledger: every award is an INSERT, never an UPDATE
  * - Uniqueness constraint: [userId, reason, sourceId] prevents double-crediting
- * - Balance is computed as SUM(amount) from the ledger
+ * - Balance is cached in User.cachedBalance (updated atomically with ledger)
  * - Negative amounts are used for spending (upgrade purchases)
  */
 
@@ -29,18 +29,13 @@ export interface SpendResult {
 }
 
 /**
- * Award points to a user. Writes to append-only ledger.
+ * Award points to a user. Writes to append-only ledger + updates cached balance.
  *
- * Uses the unique constraint [userId, reason, sourceId] to prevent
- * double-crediting. If the same award is attempted twice, the second
- * call returns { success: false, error: "duplicate" } instead of throwing.
+ * Uses prisma.$transaction to atomically:
+ * 1. Insert ledger entry
+ * 2. Increment User.cachedBalance
  *
- * @param userId - Internal user ID (NOT telegram ID)
- * @param amount - Points to award (must be positive)
- * @param reason - Why the points were awarded
- * @param sourceType - Which surface triggered this ('bot', 'mini_app', 'admin')
- * @param sourceId - Unique identifier for this specific award event
- * @param metadata - Optional extra context for audit trail
+ * The unique constraint [userId, reason, sourceId] prevents double-crediting.
  */
 export async function awardPoints(
   userId: number,
@@ -55,27 +50,34 @@ export async function awardPoints(
   }
 
   try {
-    // Single transaction: insert ledger entry
-    // The unique constraint handles double-credit prevention
-    const entry = await prisma.pointLedger.create({
-      data: {
-        userId,
-        amount,
-        reason,
-        sourceType,
-        sourceId,
-        metadata: (metadata ?? undefined) as Prisma.InputJsonValue | undefined,
-      },
+    const result = await prisma.$transaction(async (tx) => {
+      // Insert ledger entry (unique constraint handles double-credit)
+      const entry = await tx.pointLedger.create({
+        data: {
+          userId,
+          amount,
+          reason,
+          sourceType,
+          sourceId,
+          metadata: (metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+        },
+      });
+
+      // Atomically update cached balance
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: { cachedBalance: { increment: amount } },
+        select: { cachedBalance: true },
+      });
+
+      return {
+        success: true as const,
+        newBalance: user.cachedBalance,
+        ledgerEntryId: entry.id,
+      };
     });
 
-    // Compute new balance from ledger
-    const balance = await getBalance(userId);
-
-    return {
-      success: true,
-      newBalance: balance,
-      ledgerEntryId: entry.id,
-    };
+    return result;
   } catch (error: unknown) {
     // Check for unique constraint violation (duplicate award)
     if (
@@ -90,16 +92,16 @@ export async function awardPoints(
         error: "duplicate",
       };
     }
-    throw error; // Re-throw unexpected errors
+    throw error;
   }
 }
 
 /**
  * Spend points (deduct from balance). Used for upgrade purchases.
- * Creates a negative ledger entry.
+ * Creates a negative ledger entry + decrements cached balance.
  *
- * Checks balance BEFORE deducting to prevent going negative.
- * Uses a transaction with a serializable read to prevent race conditions.
+ * Uses a transaction to ensure atomicity of check-then-deduct.
+ * Reads cachedBalance within the transaction for consistency.
  */
 export async function spendPoints(
   userId: number,
@@ -113,20 +115,21 @@ export async function spendPoints(
     return { success: false, newBalance: 0, error: "Amount must be positive" };
   }
 
-  // Use a transaction to ensure atomicity of check-then-deduct
   return prisma.$transaction(async (tx) => {
-    // Calculate current balance within the transaction
-    const result = await tx.pointLedger.aggregate({
-      where: { userId },
-      _sum: { amount: true },
+    // Read cached balance within transaction
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      select: { cachedBalance: true },
     });
 
-    const currentBalance = result._sum.amount ?? 0;
+    if (!user) {
+      return { success: false, newBalance: 0, error: "User not found" };
+    }
 
-    if (currentBalance < amount) {
+    if (user.cachedBalance < amount) {
       return {
         success: false,
-        newBalance: currentBalance,
+        newBalance: user.cachedBalance,
         error: "Insufficient balance",
       };
     }
@@ -135,7 +138,7 @@ export async function spendPoints(
     await tx.pointLedger.create({
       data: {
         userId,
-        amount: -amount, // negative for spending
+        amount: -amount,
         reason,
         sourceType,
         sourceId,
@@ -143,21 +146,35 @@ export async function spendPoints(
       },
     });
 
-    const newBalance = currentBalance - amount;
-    return { success: true, newBalance };
+    // Atomically decrement cached balance
+    const updated = await tx.user.update({
+      where: { id: userId },
+      data: { cachedBalance: { decrement: amount } },
+      select: { cachedBalance: true },
+    });
+
+    return { success: true, newBalance: updated.cachedBalance };
   });
 }
 
 /**
  * Get a user's current point balance.
- * Computed as SUM(amount) from the append-only ledger.
+ * Now reads from cached balance (O(1)) instead of SUM(ledger) (O(n)).
+ * Falls back to SUM if user not found (shouldn't happen).
  */
 export async function getBalance(userId: number): Promise<number> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { cachedBalance: true },
+  });
+
+  if (user) return user.cachedBalance;
+
+  // Fallback: compute from ledger
   const result = await prisma.pointLedger.aggregate({
     where: { userId },
     _sum: { amount: true },
   });
-
   return result._sum.amount ?? 0;
 }
 
@@ -184,7 +201,9 @@ export async function getLedgerHistory(
 
 /**
  * Award tap points in bulk. Used by the tap-to-earn system.
- * sourceId includes a timestamp to allow multiple tap batches.
+ * NOTE: processTaps in energy.ts now handles its own transaction,
+ * so this function is only used for non-tap awards that need
+ * the standard award path.
  */
 export async function awardTapPoints(
   userId: number,
@@ -193,7 +212,6 @@ export async function awardTapPoints(
   sourceType: SourceType,
 ): Promise<AwardResult> {
   const totalPoints = tapCount * tapPower;
-  // Use timestamp-based sourceId for tap batches (repeatable)
   const sourceId = `tap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   return awardPoints(userId, totalPoints, "tap", sourceType, sourceId, {

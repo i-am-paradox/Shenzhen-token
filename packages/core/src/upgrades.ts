@@ -276,7 +276,16 @@ export async function purchaseUpgrade(
       }
       await tx.user.update({
         where: { id: userId },
-        data: incrementData as Record<string, { increment: number }>,
+        data: {
+          ...incrementData as Record<string, { increment: number }>,
+          cachedBalance: { decrement: cost },
+        },
+      });
+    } else {
+      // energy_regen case — still need to update cachedBalance
+      await tx.user.update({
+        where: { id: userId },
+        data: { cachedBalance: { decrement: cost } },
       });
     }
 

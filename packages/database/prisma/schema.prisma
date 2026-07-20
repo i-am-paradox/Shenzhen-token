@@ -31,6 +31,10 @@ model User {
   energyUpdatedAt DateTime  @default(now())   // timestamp of last energy write
   tapPower        Int       @default(1)       // points earned per tap (upgradeable)
   energyRegenRate Float     @default(1.0)     // energy per second (upgradeable)
+  lastTapAt       DateTime?                   // DB-backed rate limiter for taps
+
+  // Balance cache — updated atomically alongside ledger writes
+  cachedBalance   Int       @default(0)       // avoids SUM(ledger) on every request
 
   // TON wallet connection
   walletAddress   String?                     // TON wallet address (raw format)
