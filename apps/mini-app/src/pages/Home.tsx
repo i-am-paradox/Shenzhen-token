@@ -192,14 +192,15 @@ export function HomePage({ user, updateUser, updateEnergy, onNavigate }: Props) 
 
   const formattedBalance = localBalance.toLocaleString();
 
-  // Level tier
-  const tier = user.tapPower >= 10
-    ? { name: "Legend", color: "#FFD700" }
-    : user.tapPower >= 5
-      ? { name: "Power Tapper", color: "#E17055" }
-      : user.tapPower >= 3
-        ? { name: "Fast Tapper", color: "#00D4AA" }
-        : { name: "Tapper", color: "#8899AA" };
+  // Level tier system
+  const getTier = (power: number, balance: number) => {
+    if (power >= 15 || balance >= 100000) return { name: "Apex Syndicate", color: "#FFD700" };
+    if (power >= 10 || balance >= 50000) return { name: "Gold Whale", color: "#FF9F43" };
+    if (power >= 5 || balance >= 10000) return { name: "Pro Operative", color: "#00D4AA" };
+    if (power >= 3 || balance >= 1000) return { name: "Cyber Miner", color: "#54A0FF" };
+    return { name: "Novice Operative", color: "#8899AA" };
+  };
+  const tier = getTier(user.tapPower, localBalance);
 
   return (
     <div className="earn-page">
