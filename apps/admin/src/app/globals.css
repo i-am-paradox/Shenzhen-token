@@ -1,26 +1,46 @@
 /* ─── Shén Zhèn Admin — Global Styles ─── */
 
 :root {
-  /* Color palette — deep dark with electric cyan accent */
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #111118;
-  --bg-card: #161622;
-  --bg-card-hover: #1a1a2a;
-  --bg-input: #1c1c2e;
-  --border: #2a2a3e;
-  --border-hover: #3a3a5e;
-  --text-primary: #e8e8f0;
-  --text-secondary: #8888a8;
-  --text-muted: #555577;
-  --accent: #00d4ff;
-  --accent-hover: #00b8e0;
-  --accent-glow: rgba(0, 212, 255, 0.15);
-  --danger: #ff4466;
-  --danger-hover: #e03355;
-  --success: #00e676;
-  --warning: #ffab00;
-  --gradient-start: #00d4ff;
-  --gradient-end: #7c4dff;
+  /* Brand Primary Gold & Ink */
+  --primary: #fcd535;
+  --primary-active: #f0b90b;
+  --primary-disabled: #3a3a1f;
+  --ink: #181a20;
+
+  /* Canvas & Surfaces */
+  --canvas-dark: #0b0e11;
+  --bg-primary: #0b0e11;
+  --bg-secondary: #181a20;
+  --bg-card: #1e2329;
+  --bg-card-hover: #2b3139;
+  --bg-input: #2b3139;
+
+  --border: #2b3139;
+  --border-hover: #707a8a;
+  --border-strong: #cdd1d6;
+
+  /* Typography & Ink */
+  --body: #eaecef;
+  --text-primary: #eaecef;
+  --text-secondary: #929aa5;
+  --text-muted: #707a8a;
+  --muted: #707a8a;
+  --muted-strong: #929aa5;
+
+  /* Accents & Trading Colors */
+  --accent: #fcd535;
+  --accent-hover: #f0b90b;
+  --accent-glow: rgba(252, 213, 53, 0.15);
+  --accent-turquoise: #2dbdb6;
+
+  --danger: #f6465d;
+  --danger-hover: #d9384f;
+  --success: #0ecb81;
+  --warning: #f0b90b;
+  --info: #3b82f6;
+
+  --gradient-start: #fcd535;
+  --gradient-end: #2dbdb6;
 }
 
 *,

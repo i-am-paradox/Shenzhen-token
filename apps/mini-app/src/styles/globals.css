@@ -5,31 +5,63 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
-/* ── Design Tokens ─────────────────────────────────────────── */
+/* ── Design Tokens (Binance Pro Dark Theme) ─────────────────────────── */
 :root {
-  --bg-base:       #0A0E1A;
-  --bg-card:       #111827;
-  --bg-elevated:   #1A2235;
-  --bg-glass:      rgba(26, 34, 53, 0.8);
+  /* Brand Primary Gold */
+  --primary:           #fcd535;
+  --primary-active:    #f0b90b;
+  --primary-disabled:  #3a3a1f;
+  --on-primary:        #181a20;
 
-  --accent:        #00D4AA;
-  --accent-dim:    rgba(0, 212, 170, 0.15);
-  --accent-glow:   rgba(0, 212, 170, 0.4);
+  /* Canvas & Surfaces */
+  --canvas-light:      #ffffff;
+  --canvas-dark:       #0b0e11;
+  --bg-base:           #0b0e11;
+  --bg-card:           #1e2329;
+  --bg-elevated:       #2b3139;
+  --bg-glass:          rgba(30, 35, 41, 0.85);
 
-  --gold:          #FFD700;
-  --gold-dim:      rgba(255, 215, 0, 0.15);
-  --gold-glow:     rgba(255, 215, 0, 0.5);
+  --surface-card-dark:     #1e2329;
+  --surface-elevated-dark: #2b3139;
+  --surface-soft-light:    #fafafa;
+  --surface-strong-light:  #f5f5f5;
+  --hairline-on-light:     #eaecef;
+  --hairline-on-dark:      #2b3139;
 
-  --danger:        #FF4757;
-  --warning:       #FFA502;
-  --purple:        #7C5CBF;
+  /* Accents & Trading Colors */
+  --accent:            #fcd535;
+  --accent-dim:        rgba(252, 213, 53, 0.15);
+  --accent-glow:       rgba(252, 213, 53, 0.4);
 
-  --text-primary:  #FFFFFF;
-  --text-secondary: #8899AA;
-  --text-muted:    #4A5568;
+  --accent-turquoise:  #2dbdb6;
+  --trading-up:        #0ecb81;
+  --trading-down:      #f6465d;
+  --info:              #3b82f6;
+  --info-ring:         #3b82f6;
 
-  --border:        rgba(255, 255, 255, 0.07);
-  --border-accent: rgba(0, 212, 170, 0.3);
+  --gold:              #fcd535;
+  --gold-dim:          rgba(252, 213, 53, 0.15);
+  --gold-glow:         rgba(252, 213, 53, 0.5);
+
+  --danger:            #f6465d;
+  --warning:           #f0b90b;
+  --purple:            #7C5CBF;
+
+  /* Typography & Ink */
+  --ink:               #181a20;
+  --body:              #eaecef;
+  --body-on-light:     #181a20;
+  --text-primary:      #eaecef;
+  --text-secondary:    #929aa5;
+  --text-muted:        #707a8a;
+  --muted:             #707a8a;
+  --muted-strong:      #929aa5;
+  --on-dark:           #ffffff;
+
+  /* Borders & Dividers */
+  --border:            #2b3139;
+  --border-strong:     #cdd1d6;
+  --border-accent:     rgba(252, 213, 53, 0.3);
 
   --radius-sm:  8px;
   --radius-md:  14px;
@@ -37,7 +69,7 @@
   --radius-xl:  28px;
   --radius-full: 999px;
 
-  --shadow-card:   0 4px 24px rgba(0,0,0,0.4);
+  --shadow-card:   0 4px 24px rgba(0,0,0,0.6);
   --shadow-accent: 0 0 24px var(--accent-glow);
   --shadow-gold:   0 0 24px var(--gold-glow);
 
